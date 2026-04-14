@@ -147,7 +147,7 @@ fn main() -> Result<()> {
                 frame = 0; // Reset frame counter
             }
 
-            eprint!("\r{} Building... ", frames[frame]);
+            eprint!("\r{} ", frames[frame]);
             let _ = std::io::stderr().flush();
             frame = (frame + 1) % frames.len();
             thread::sleep(Duration::from_millis(100));
@@ -171,6 +171,9 @@ fn main() -> Result<()> {
     let mut current_test_failure: Option<TestFailure> = None;
     let mut in_failure_section = false;
     let mut current_module: Option<String> = None;
+    let mut reactor_printed = false;
+    let mut printed_modules: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let original_reactor_order = output.reactor_order.clone();
     let build_start = Instant::now();
 
     // Parse Maven output
@@ -199,6 +202,32 @@ fn main() -> Result<()> {
 
         // Parse module build start
         if let Some(module_name) = parse_module_start(&line) {
+            // Add to reactor order if not already present (handles single-module builds and submodules)
+            let is_new_module = !output.reactor_order.contains(&module_name);
+            if is_new_module {
+                output.reactor_order.push(module_name.clone());
+            }
+
+            // Print reactor build order when we encounter a module not in original reactor order (indicates submodules)
+            if !reactor_printed && is_new_module && !original_reactor_order.is_empty() {
+                println!("\nReactor Build Order:");
+                for (i, module) in output.reactor_order.iter().enumerate() {
+                    println!("  {}. {}", i + 1, module);
+                }
+                println!();
+                reactor_printed = true;
+            }
+
+            // For single-module builds, print after first Building line
+            if !reactor_printed && !is_new_module && output.reactor_order.len() == 1 {
+                println!("\nReactor Build Order:");
+                for (i, module) in output.reactor_order.iter().enumerate() {
+                    println!("  {}. {}", i + 1, module);
+                }
+                println!();
+                reactor_printed = true;
+            }
+
             // Close out previous module's timing
             if let Some(prev_module) = current_module.take() {
                 if let Some(info) = output.modules.get_mut(&prev_module) {
@@ -208,11 +237,12 @@ fn main() -> Result<()> {
                 }
             }
 
-            println!("> Building {}", module_name);
-
-            // Add to reactor order if not already present (handles single-module builds)
-            if !output.reactor_order.contains(&module_name) {
-                output.reactor_order.push(module_name.clone());
+            // Clear spinner line before printing module name
+            if !printed_modules.contains(&module_name) {
+                eprint!("\r{}\r", " ".repeat(50)); // Clear the spinner line
+                let _ = std::io::stderr().flush();
+                println!("> Building {}", module_name);
+                printed_modules.insert(module_name.clone());
             }
 
             // Ensure module exists in tracking
@@ -352,13 +382,8 @@ fn parse_reactor_module(line: &str) -> Option<String> {
     let caps = re.captures(trimmed)?;
     let full_module = caps.get(1)?.as_str().trim();
 
-    // Extract just the module name part (after the last colon)
-    let parts: Vec<&str> = full_module.split(':').collect();
-    if parts.len() >= 2 {
-        Some(parts[parts.len() - 1].trim().to_string())
-    } else {
-        Some(full_module.to_string())
-    }
+    // Return the full module identifier (groupId:artifactId or just name)
+    Some(full_module.to_string())
 }
 
 fn parse_module_start(line: &str) -> Option<String> {
@@ -367,13 +392,8 @@ fn parse_module_start(line: &str) -> Option<String> {
     let caps = re.captures(line)?;
     let full_module = caps.get(1)?.as_str();
 
-    // Extract just the module name part (after the colon)
-    let parts: Vec<&str> = full_module.split(':').collect();
-    if parts.len() >= 2 {
-        Some(parts[parts.len() - 1].to_string())
-    } else {
-        Some(full_module.to_string())
-    }
+    // Return the full module identifier (groupId:artifactId or just name)
+    Some(full_module.to_string())
 }
 
 fn parse_test_failure_header(_line: &str) -> Option<TestFailure> {
@@ -400,13 +420,6 @@ fn print_summary(output: &MvnOutput) {
     println!("\n{}", "=".repeat(80));
     println!("BUILD SUMMARY");
     println!("{}", "=".repeat(80));
-
-    if !output.reactor_order.is_empty() {
-        println!("\nReactor Build Order:");
-        for (i, module) in output.reactor_order.iter().enumerate() {
-            println!("  {}. {}", i + 1, module);
-        }
-    }
 
     println!("\nModule Status:");
     for module_name in &output.reactor_order {
