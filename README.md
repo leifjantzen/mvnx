@@ -11,7 +11,8 @@ Maven wrapper skrevet i Rust som gir ryddig og lesbar utdata for flerfoldige pro
   - Reaktor bygge rekkefølge
   - Modulstatus (OK/FAIL) med tidsforbruk
   - Samlet byggestatus og total tidsforbruk
-- **Testfeildetaljer**: Viser stacktraces for feilede tester
+- **Testfeildetaljer**: Viser stacktraces for feilede tester (fra både `.txt` og XML rapporter)
+- **XML-basert feilparsing**: Parser Maven Surefire XML-rapporter for detaljerte feilmeldinger
 - **Dad jokes**: Valgfri humor under byggingen
 - **Clipboard kopiering**: Kopierer stacktraces til utklippstavlen automatisk
 
@@ -86,6 +87,21 @@ java.lang.AssertionError: Expected 42 but got 41
 Stacktrace copied to clipboard.
 ```
 
+## Testing
+
+Kjør enhetstestene:
+
+```bash
+cargo test
+```
+
+Testene dekker:
+- Parsing av reaktor moduler fra Maven-utdata
+- Parsing av modulbyggstartlinjer
+- Parsing av testresultatsammendrag
+- Filtrering av stacktraces (fjerner rammeverkslinjer, beholder bruker-kode)
+- Parsering av Maven Surefire XML-rapporter for feilmeldinger og errorer
+
 ## Installasjon
 
 ### Bygg fra kildekode
@@ -120,8 +136,12 @@ Wrapperen:
    - Modulbygging framgang
    - Bygje fullføring status og tidsforbruk
    - Testfeilinformasjon
-4. Viser en ryddig sammendrag
-5. Avslutter med Mavens utgangskode
+4. Parser Maven Surefire rapporter:
+   - Leser `.txt` filer for sammendrag
+   - Leser `TEST-*.xml` filer for detaljerte stacktraces og feilmeldinger
+   - Filtrerer ut rammeverks-relaterte stacktracelinjer
+5. Viser en ryddig sammendrag med feildetaljer
+6. Avslutter med Mavens utgangskode
 
 ## Krav
 

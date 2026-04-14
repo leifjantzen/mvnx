@@ -1,5 +1,8 @@
 use anyhow::Result;
-use regex::Regex;
+use mvnx::{
+    extract_xml_failures, filter_stack_trace, parse_module_start, parse_reactor_module,
+    parse_test_results,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -71,7 +74,7 @@ fn main() -> Result<()> {
 
     // Check for -j flag (dad jokes) and -ji flag (joke interval)
     let mut joke_interval: u64 = 30; // default 30 seconds
-    let has_ji = mvn_args.iter().position(|arg| arg == "-ji").is_some();
+    let has_ji = mvn_args.iter().any(|arg| arg == "-ji");
 
     // Look for -ji option with interval value
     if let Some(pos) = mvn_args.iter().position(|arg| arg == "-ji") {
@@ -375,45 +378,10 @@ fn main() -> Result<()> {
     std::process::exit(exit_status.code().unwrap_or(1));
 }
 
-fn parse_reactor_module(line: &str) -> Option<String> {
-    // Pattern: "1. com.example:module-name"
-    let trimmed = line.trim();
-    let re = Regex::new(r"^\d+\.\s+(.+)$").ok()?;
-    let caps = re.captures(trimmed)?;
-    let full_module = caps.get(1)?.as_str().trim();
-
-    // Return the full module identifier (groupId:artifactId or just name)
-    Some(full_module.to_string())
-}
-
-fn parse_module_start(line: &str) -> Option<String> {
-    // Pattern: "[INFO] Building com.example:module-name 1.0"
-    let re = Regex::new(r"\[INFO\]\s+Building\s+([^\s]+)").ok()?;
-    let caps = re.captures(line)?;
-    let full_module = caps.get(1)?.as_str();
-
-    // Return the full module identifier (groupId:artifactId or just name)
-    Some(full_module.to_string())
-}
-
 fn parse_test_failure_header(_line: &str) -> Option<TestFailure> {
     Some(TestFailure {
         stack_trace: Vec::new(),
     })
-}
-
-fn parse_test_results(line: &str) -> Option<(u32, u32, u32, u32)> {
-    // Pattern: "Tests run: 5, Failures: 1, Errors: 0, Skipped: 0"
-    let re =
-        Regex::new(r"Tests run: (\d+), Failures: (\d+), Errors: (\d+), Skipped: (\d+)").ok()?;
-    let caps = re.captures(line)?;
-
-    let run = caps.get(1)?.as_str().parse::<u32>().ok()?;
-    let failed = caps.get(2)?.as_str().parse::<u32>().ok()?;
-    let errored = caps.get(3)?.as_str().parse::<u32>().ok()?;
-    let skipped = caps.get(4)?.as_str().parse::<u32>().ok()?;
-
-    Some((run, failed, errored, skipped))
 }
 
 fn print_summary(output: &MvnOutput) {
@@ -466,30 +434,6 @@ fn print_summary(output: &MvnOutput) {
     }
 }
 
-fn filter_stack_trace(content: &str) -> String {
-    // Filter out lines from uninteresting packages
-    let uninteresting_prefixes = [
-        "at io",
-        "at java",
-        "at kotlin",
-        "at org",
-        "at feign",
-        "at jdk",
-        "at com",
-    ];
-
-    content
-        .lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            !uninteresting_prefixes
-                .iter()
-                .any(|prefix| trimmed.starts_with(prefix))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 fn find_surefire_failures(modules: &[String]) -> Result<Vec<(String, String)>> {
     let mut failures = Vec::new();
 
@@ -501,11 +445,15 @@ fn find_surefire_failures(modules: &[String]) -> Result<Vec<(String, String)>> {
             continue;
         }
 
-        // Read all .txt files from the surefire-reports directory
+        // Read all .txt and .xml files from the surefire-reports directory
         if let Ok(entries) = fs::read_dir(&surefire_path) {
             let mut reports: Vec<_> = entries
                 .flatten()
-                .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("txt"))
+                .filter(|e| {
+                    let path = e.path();
+                    let ext = path.extension().and_then(|s| s.to_str());
+                    ext == Some("txt") || ext == Some("xml")
+                })
                 .collect();
 
             // Sort by filename for consistent output
@@ -519,9 +467,20 @@ fn find_surefire_failures(modules: &[String]) -> Result<Vec<(String, String)>> {
                 let path = entry.path();
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-                // Process *.txt files (test class reports), skip TEST-*.xml files
-                if !filename.starts_with("TEST-") {
-                    if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    // Handle XML files (TEST-*.xml) - these contain detailed failure info
+                    if filename.starts_with("TEST-") && filename.ends_with(".xml") {
+                        if let Some(extracted) = extract_xml_failures(&content) {
+                            if !extracted.is_empty() {
+                                failures.push((
+                                    module.clone(),
+                                    format!("--- {} ---\n{}", filename, extracted),
+                                ));
+                            }
+                        }
+                    }
+                    // Handle txt files (summary reports)
+                    else if !filename.starts_with("TEST-") {
                         // Only include files with actual failures or errors
                         if content.contains("FAILURE") || content.contains("ERROR") {
                             let filtered = filter_stack_trace(&content);
