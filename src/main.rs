@@ -528,12 +528,12 @@ fn copy_to_clipboard(text: &str) -> Result<()> {
 }
 
 fn fetch_dad_joke() -> Result<DadJoke> {
-    let response = ureq::get("https://icanhazdadjoke.com/")
-        .set("Accept", "application/json")
-        .set("User-Agent", "mvnx")
-        .call()?;
-
-    let joke = response.into_json::<DadJoke>()?;
+    let joke = ureq::get("https://icanhazdadjoke.com/")
+        .header("Accept", "application/json")
+        .header("User-Agent", "mvnx")
+        .call()?
+        .into_body()
+        .read_json::<DadJoke>()?;
     Ok(joke)
 }
 
