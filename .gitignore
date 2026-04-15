@@ -2,9 +2,6 @@
 /target/
 **/*.rs.bk
 
-# Cargo
-Cargo.lock
-
 # OS
 .DS_Store
 .DS_Store?
