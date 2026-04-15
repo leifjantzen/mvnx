@@ -2,6 +2,14 @@
 name = "mvnx"
 version = "0.1.0"
 edition = "2021"
+description = "A clean and readable Maven wrapper for multi-module projects"
+license = "MIT"
+authors = ["Leif L Jantzen <ljantzen@gmail.com>"]
+repository = "https://github.com/ljantzen/mvnx"
+homepage = "https://github.com/ljantzen/mvnx"
+documentation = "https://docs.rs/mvnx"
+keywords = ["maven", "wrapper", "build", "cli"]
+categories = ["development-tools::build-utils", "command-line-utilities"]
 
 [dependencies]
 regex = "1"
