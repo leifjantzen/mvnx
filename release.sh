@@ -110,15 +110,34 @@ check_clean_working_dir() {
     print_success "Working directory is clean"
 }
 
+# Check if tag exists on origin
+tag_exists_on_origin() {
+    local tag=$1
+    git ls-remote --tags origin "$tag" >/dev/null 2>&1
+}
+
+# Check if version is published on crates.io
+is_published_on_crates() {
+    local version=$1
+    # Query crates.io API to check if the version exists
+    curl -s "https://crates.io/api/v1/crates/mvnx/versions" | \
+        jq -e ".versions[] | select(.num == \"$version\")" >/dev/null 2>&1
+}
+
 # Create and push version tag
 create_and_push_tag() {
     local version=$1
     local tag="v$version"
 
+    if tag_exists_on_origin "$tag"; then
+        print_success "Tag $tag already exists on origin, skipping tag creation"
+        return 0
+    fi
+
     print_info "Creating tag $tag..."
 
     if git rev-parse "$tag" >/dev/null 2>&1; then
-        print_error "Tag $tag already exists"
+        print_error "Tag $tag exists locally but not on origin"
         exit 1
     fi
 
@@ -200,6 +219,13 @@ wait_for_workflow() {
 
 # Publish to crates.io
 publish_to_crates() {
+    local version=$1
+
+    if is_published_on_crates "$version"; then
+        print_success "Version $version is already published on crates.io, skipping publication"
+        return 0
+    fi
+
     print_info "Publishing to crates.io..."
 
     if ! cargo publish; then
@@ -243,30 +269,41 @@ main() {
     print_info "New version to release: $new_version"
     echo ""
 
-    read -p "Proceed with release v$new_version to GitHub and crates.io? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        print_info "Release cancelled"
-        exit 0
-    fi
-    echo ""
+    # Check if tag already exists on origin
+    local tag="v$new_version"
+    local tag_exists=$(tag_exists_on_origin "$tag")
 
-    # Step 0: Update version and commit
-    if ! update_version "$new_version"; then
-        exit 1
-    fi
+    if [ "$tag_exists" = "0" ]; then
+        # Tag doesn't exist, proceed with full release
+        read -p "Proceed with release v$new_version to GitHub and crates.io? (y/N) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "Release cancelled"
+            exit 0
+        fi
+        echo ""
 
-    print_info "Committing version change..."
-    git add Cargo.toml
-    git commit -m "Bump version to $new_version
+        # Step 0: Update version and commit
+        if ! update_version "$new_version"; then
+            exit 1
+        fi
+
+        print_info "Committing version change..."
+        git add Cargo.toml
+        git commit -m "Bump version to $new_version
 
 Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
-    print_success "Version commit created"
-    echo ""
+        print_success "Version commit created"
+        echo ""
 
-    # Step 1: Create and push tag
-    create_and_push_tag "$new_version"
-    echo ""
+        # Step 1: Create and push tag
+        create_and_push_tag "$new_version"
+        echo ""
+    else
+        # Tag already exists on origin, skip to workflow
+        print_info "Tag $tag already exists on origin, resuming release process..."
+        echo ""
+    fi
 
     # Step 2: Wait for GitHub Actions
     if ! wait_for_workflow "v$new_version"; then
@@ -276,7 +313,7 @@ Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
     echo ""
 
     # Step 3: Publish to crates.io
-    if publish_to_crates; then
+    if publish_to_crates "$new_version"; then
         echo ""
         echo "=========================================="
         print_success "Release v$new_version completed successfully!"
