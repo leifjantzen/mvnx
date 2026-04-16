@@ -158,14 +158,36 @@ wait_for_workflow() {
     print_info "Watching workflow for tag: $tag"
     echo ""
 
-    # Use gh run watch to monitor the most recent run
-    # First, get the ID of the most recent release workflow run
-    local run_id=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId 2>/dev/null | jq -r '.[0].databaseId // empty')
+    # Use gh run watch to monitor the run for this specific tag
+    # Get the commit SHA of the tag we just pushed
+    local commit_sha=$(git rev-parse "$tag")
 
-    if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
-        # Try alternative: get the most recent run without filtering by workflow
-        run_id=$(gh run list --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId 2>/dev/null | jq -r '.[0].databaseId // empty')
-    fi
+    # Wait for the run to appear in the API
+    local run_id=""
+    local attempts=0
+    local max_attempts=24  # 2 minutes with 5-second intervals
+
+    print_info "Waiting for workflow run to appear in GitHub API (looking for commit $commit_sha)..."
+
+    while [ -z "$run_id" ] && [ $attempts -lt $max_attempts ]; do
+        # Get recent runs for the workflow and find the one matching our commit
+        local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,headSha 2>/dev/null)
+
+        # Find the run that matches our commit SHA
+        if [ -n "$run_list" ] && [ "$run_list" != "[]" ]; then
+            run_id=$(echo "$run_list" | jq -r ".[] | select(.headSha == \"$commit_sha\") | .databaseId" 2>/dev/null | head -1)
+
+            if [ -n "$run_id" ] && [ "$run_id" != "null" ]; then
+                break
+            fi
+        fi
+
+        attempts=$((attempts + 1))
+        if [ $attempts -lt $max_attempts ]; then
+            echo -n "."
+            sleep 5
+        fi
+    done
 
     if [ -z "$run_id" ]; then
         print_error "Could not find workflow run"
