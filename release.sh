@@ -159,8 +159,8 @@ wait_for_workflow() {
     echo ""
 
     # Use gh run watch to monitor the run for this specific tag
-    # Get the commit SHA of the tag we just pushed
-    local commit_sha=$(git rev-parse "$tag")
+    # Get the commit SHA that the tag points to (dereference annotated tag)
+    local commit_sha=$(git rev-parse "$tag^{commit}" 2>/dev/null || git rev-list -n 1 "$tag")
 
     # Wait for the run to appear in the API
     local run_id=""
@@ -173,11 +173,6 @@ wait_for_workflow() {
         # Get recent runs for the workflow with all relevant fields
         local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,headSha,name,createdAt 2>/dev/null)
 
-        # Debug: show what we're getting
-        if [ $((attempts % 4)) -eq 0 ] && [ $attempts -gt 0 ]; then
-            print_info "Available runs:"
-            echo "$run_list" | jq -r '.[] | "  - ID: \(.databaseId), SHA: \(.headSha), Name: \(.name)"' 2>/dev/null || true
-        fi
 
         # Find the run that matches our commit SHA
         if [ -n "$run_list" ] && [ "$run_list" != "[]" ]; then
