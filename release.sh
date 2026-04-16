@@ -54,6 +54,52 @@ get_version() {
     grep '^version = ' Cargo.toml | head -1 | cut -d'"' -f2
 }
 
+# Validate version format (semantic versioning)
+validate_version() {
+    local version=$1
+    if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        print_error "Invalid version format: $version (expected semantic versioning: X.Y.Z)"
+        return 1
+    fi
+    return 0
+}
+
+# Update version in Cargo.toml
+update_version() {
+    local new_version=$1
+    local current_version=$(get_version)
+
+    if [ "$new_version" = "$current_version" ]; then
+        print_error "New version ($new_version) is the same as current version in Cargo.toml"
+        return 1
+    fi
+
+    print_info "Updating version from $current_version to $new_version in Cargo.toml..."
+    sed -i "s/^version = \"$current_version\"/version = \"$new_version\"/" Cargo.toml
+    print_success "Version updated to $new_version"
+}
+
+# Show usage
+show_usage() {
+    cat << EOF
+Usage: ./release.sh <version>
+
+Arguments:
+  <version>    New version to release (semantic versioning: X.Y.Z)
+
+Example:
+  ./release.sh 1.0.0
+  ./release.sh 1.1.0
+
+The script will:
+1. Update Cargo.toml with the new version
+2. Commit the version change
+3. Create and push a version tag (v<version>)
+4. Wait for GitHub Actions to complete
+5. Publish to crates.io
+EOF
+}
+
 # Check if working directory is clean
 check_clean_working_dir() {
     if [ -n "$(git status --porcelain)" ]; then
@@ -149,19 +195,38 @@ publish_to_crates() {
 
 # Main function
 main() {
+    # Parse arguments
+    if [ $# -eq 0 ]; then
+        show_usage
+        exit 1
+    fi
+
+    local new_version=$1
+
+    if [ "$new_version" = "-h" ] || [ "$new_version" = "--help" ]; then
+        show_usage
+        exit 0
+    fi
+
     echo "=========================================="
     echo "        Release Script for mvnx"
     echo "=========================================="
     echo ""
 
+    # Validate version format
+    if ! validate_version "$new_version"; then
+        exit 1
+    fi
+
     check_prerequisites
     check_clean_working_dir
 
-    local version=$(get_version)
-    print_info "Current version in Cargo.toml: $version"
+    local current_version=$(get_version)
+    print_info "Current version in Cargo.toml: $current_version"
+    print_info "New version to release: $new_version"
     echo ""
 
-    read -p "Release version $version to GitHub and crates.io? (y/N) " -n 1 -r
+    read -p "Proceed with release v$new_version to GitHub and crates.io? (y/N) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         print_info "Release cancelled"
@@ -169,12 +234,25 @@ main() {
     fi
     echo ""
 
+    # Step 0: Update version and commit
+    if ! update_version "$new_version"; then
+        exit 1
+    fi
+
+    print_info "Committing version change..."
+    git add Cargo.toml
+    git commit -m "Bump version to $new_version
+
+Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+    print_success "Version commit created"
+    echo ""
+
     # Step 1: Create and push tag
-    create_and_push_tag "$version"
+    create_and_push_tag "$new_version"
     echo ""
 
     # Step 2: Wait for GitHub Actions
-    if ! wait_for_workflow "v$version"; then
+    if ! wait_for_workflow "v$new_version"; then
         print_error "Cannot proceed with crates.io publication until GitHub Actions succeeds"
         exit 1
     fi
@@ -184,10 +262,10 @@ main() {
     if publish_to_crates; then
         echo ""
         echo "=========================================="
-        print_success "Release v$version completed successfully!"
+        print_success "Release v$new_version completed successfully!"
         echo "=========================================="
-        echo "GitHub Release: https://github.com/$REPO_OWNER/$REPO_NAME/releases/tag/v$version"
-        echo "crates.io: https://crates.io/crates/mvnx/v$version"
+        echo "GitHub Release: https://github.com/$REPO_OWNER/$REPO_NAME/releases/tag/v$new_version"
+        echo "crates.io: https://crates.io/crates/mvnx/v$new_version"
     else
         print_error "Release partially complete - tag pushed but crates.io publication failed"
         exit 1
