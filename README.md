@@ -1,48 +1,48 @@
 # mvnx
 
-Maven wrapper skrevet i Rust som gir ryddig og lesbar utdata for flerfoldige prosjekter.
+Maven wrapper written in Rust that provides clean and readable output for multi-module projects.
 
-## Funksjoner
+## Features
 
-- **Ryddig utdata**: Viser kun vesentlig informasjon
-- **Reaktor bygge rekkefølge**: Viser rekkefølgen moduler bygges i
-- **Framdriftsindikator**: Viser hvilken modul som bygges for tiden
-- **Byggesammendrag**: Viser:
-  - Reaktor bygge rekkefølge
-  - Modulstatus (OK/FAIL) med tidsforbruk
-  - Samlet byggestatus og total tidsforbruk
-- **Testfeildetaljer**: Viser stacktraces for feilede tester (fra både `.txt` og XML rapporter)
-- **XML-basert feilparsing**: Parser Maven Surefire XML-rapporter for detaljerte feilmeldinger
-- **Dad jokes**: Valgfri humor under byggingen
-- **Clipboard kopiering**: Kopierer stacktraces til utklippstavlen automatisk
+- **Clean output**: Shows only essential information
+- **Reactor build order**: Shows the order modules are built in
+- **Progress indicator**: Shows which module is being built currently
+- **Build summary**: Shows:
+  - Reactor build order
+  - Module status (OK/FAIL) with time spent
+  - Overall build status and total time spent
+- **Test failure details**: Shows stacktraces for failed tests (from both `.txt` and XML reports)
+- **XML-based error parsing**: Parses Maven Surefire XML reports for detailed error messages
+- **Dad jokes**: Optional humor during the build
+- **Clipboard copying**: Copies stacktraces to clipboard automatically
 
-## Bruk
+## Usage
 
-Wrapperen tar de samme argumentene som `mvn`:
+The wrapper takes the same arguments as `mvn`:
 
 ```bash
-# Grunnleggende bygg
+# Basic build
 mvnx clean install
 
-# Hopp over tester
+# Skip tests
 mvnx clean install -DskipTests
 
-# Spesifikt mål
+# Specific goal
 mvnx clean test
 
-# Egendefinerte innstillinger
+# Custom settings
 mvnx -s ~/settings.xml clean package
 ```
 
-### Spesielle flagg
+### Special flags
 
-- `-h, --help`: Vis hjelpmelding
-- `--mvnhelp`: Vis Maven sin hjelpmelding (mvn --help)
-- `--clip`: Kopier stacktrace til utklippstavlen når det oppstår nøyaktig en testfeil
-- `-j`: Vis dad jokes hvert 30. sekund under byggingen
-- `-ji <sekunder>`: Vis dad jokes med egendefinert intervall (impliserer `-j`)
+- `-h, --help`: Show help message
+- `--mvnhelp`: Show Maven's help message (mvn --help)
+- `--clip`: Copy stacktrace to clipboard when exactly one test fails
+- `-j`: Show dad jokes every 30 seconds during the build
+- `-ji <seconds>`: Show dad jokes with custom interval (implies `-j`)
 
-Eksempler:
+Examples:
 
 ```bash
 mvnx clean install
@@ -52,7 +52,7 @@ mvnx -ji 20 test
 mvnx --clip -j package
 ```
 
-## Utdataeksempel
+## Output Example
 
 ```
 > Building module-a
@@ -89,70 +89,70 @@ Stacktrace copied to clipboard.
 
 ## Testing
 
-Kjør enhetstestene:
+Run unit tests:
 
 ```bash
 cargo test
 ```
 
-Testene dekker:
-- Parsing av reaktor moduler fra Maven-utdata
-- Parsing av modulbyggstartlinjer
-- Parsing av testresultatsammendrag
-- Filtrering av stacktraces (fjerner rammeverkslinjer, beholder bruker-kode)
-- Parsering av Maven Surefire XML-rapporter for feilmeldinger og errorer
+The tests cover:
+- Parsing reactor modules from Maven output
+- Parsing module build start lines
+- Parsing test result summaries
+- Filtering stacktraces (removes framework lines, keeps user code)
+- Parsing Maven Surefire XML reports for error messages and errors
 
-## Installasjon
+## Installation
 
-### Bygg fra kildekode
+### Build from source
 
 ```bash
 cargo build --release
-# Binær på ./target/release/mvnx
+# Binary at ./target/release/mvnx
 ```
 
-### Legg til i PATH
+### Add to PATH
 
-Kopier binæren til en lokasjon i PATH:
+Copy the binary to a location in PATH:
 
 ```bash
 cp target/release/mvnx ~/.local/bin/
-# eller
+# or
 sudo cp target/release/mvnx /usr/local/bin/
 ```
 
-Bruk det da som:
+Use it then as:
 ```bash
 mvnx clean install
 ```
 
-## Hvordan det fungerer
+## How it works
 
-Wrapperen:
-1. Starter Maven som en underprosess
-2. Fanger og parser dens stdout-utdata
-3. Trekker ut nøkkelinformasjon:
-   - Reaktor modul rekkefølge
-   - Modulbygging framgang
-   - Bygje fullføring status og tidsforbruk
-   - Testfeilinformasjon
-4. Parser Maven Surefire rapporter:
-   - Leser `.txt` filer for sammendrag
-   - Leser `TEST-*.xml` filer for detaljerte stacktraces og feilmeldinger
-   - Filtrerer ut rammeverks-relaterte stacktracelinjer
-5. Viser en ryddig sammendrag med feildetaljer
-6. Avslutter med Mavens utgangskode
+The wrapper:
+1. Starts Maven as a subprocess
+2. Captures and parses its stdout output
+3. Extracts key information:
+   - Reactor module order
+   - Module build progress
+   - Build completion status and time spent
+   - Test failure information
+4. Parses Maven Surefire reports:
+   - Reads `.txt` files for summaries
+   - Reads `TEST-*.xml` files for detailed stacktraces and error messages
+   - Filters out framework-related stacktrace lines
+5. Shows a clean summary with error details
+6. Exits with Maven's exit code
 
-## Krav
+## Requirements
 
-- Maven installert og tilgjengelig i PATH
-- Et clipboard-verktøy:
+- Maven installed and available in PATH
+- A clipboard tool:
   - `wl-copy` (Wayland)
   - `xclip` (X11)
   - `pbcopy` (macOS)
 
-## Begrensninger
+## Limitations
 
-- Optimalisert for standard Maven-utdataformat
-- Testfeil parsing kan trenge justering basert på ditt testframework
-- Krever `mvn` installert og i PATH
+- Optimized for standard Maven output format
+- Test failure parsing may need adjustment based on your test framework
+- Requires `mvn` installed and in PATH
