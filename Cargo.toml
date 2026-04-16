@@ -1,6 +1,6 @@
 [package]
 name = "mvnx"
-version = "1.0.7"
+version = "1.0.8"
 edition = "2021"
 description = "A clean and readable Maven wrapper for multi-module projects"
 license = "MIT"
