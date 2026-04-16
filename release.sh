@@ -153,95 +153,49 @@ create_and_push_tag() {
 # Wait for GitHub Actions workflow to complete
 wait_for_workflow() {
     local tag=$1
-    local elapsed=0
-    local run_id=""
 
     print_info "Waiting for GitHub Actions workflow to complete..."
+    print_info "Watching workflow for tag: $tag"
+    echo ""
 
-    # First, wait for the workflow run to be created
-    print_info "Waiting for workflow run to be triggered (up to ${RUN_CREATION_TIMEOUT}s)..."
-    print_info "Looking for tag: $tag"
-    local wait_for_run=0
-    local attempts=0
-    while [ $wait_for_run -lt $RUN_CREATION_TIMEOUT ]; do
-        attempts=$((attempts + 1))
-
-        # Try multiple approaches to find the run
-        # Approach 1: Get runs by workflow name
-        local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,status,headRef,createdAt 2>/dev/null || echo "")
-
-        if [ -z "$run_list" ]; then
-            # Approach 2: Try with just the repo (no workflow filter)
-            run_list=$(gh run list --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,status,headRef,createdAt 2>/dev/null || echo "")
-        fi
-
-        if [ -n "$run_list" ] && [ "$run_list" != "[]" ]; then
-            # Debug: show what we got
-            if [ $((attempts % 12)) -eq 0 ]; then
-                print_info "Found runs:"
-                echo "$run_list" | jq -r '.[] | "  - ID: \(.databaseId), Status: \(.status), Head: \(.headRef)"' 2>/dev/null || true
-            fi
-
-            # Try to find a run for this tag
-            run_id=$(echo "$run_list" | jq -r ".[] | select(.headRef == \"$tag\") | .databaseId" 2>/dev/null | head -1)
-
-            # If no exact match by headRef, take the most recent run (first in list)
-            if [ -z "$run_id" ]; then
-                run_id=$(echo "$run_list" | jq -r '.[0].databaseId // empty' 2>/dev/null)
-            fi
-
-            if [ -n "$run_id" ]; then
-                print_success "Workflow run detected (ID: $run_id)"
-                break
-            fi
-        fi
-
-        echo -n "."
-        sleep 5
-        wait_for_run=$((wait_for_run + 5))
-    done
+    # Use gh run watch to monitor the most recent run
+    # First, get the ID of the most recent release workflow run
+    local run_id=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)
 
     if [ -z "$run_id" ]; then
+        # Try alternative query
+        run_id=$(gh api repos/$REPO_OWNER/$REPO_NAME/actions/workflows -q '.[0].id' 2>/dev/null)
+    fi
+
+    if [ -z "$run_id" ]; then
+        print_error "Could not find workflow run"
+        print_info "Checking workflow status at: https://github.com/$REPO_OWNER/$REPO_NAME/actions"
         echo ""
-        print_error "Workflow run was not detected within ${RUN_CREATION_TIMEOUT}s"
-        print_info "You can check the workflow status at: https://github.com/$REPO_OWNER/$REPO_NAME/actions"
+        print_info "Please check GitHub Actions manually. You may need to:"
+        echo "  1. Wait for the workflow to complete"
+        echo "  2. Run 'cargo publish' manually when ready"
         return 1
     fi
 
+    print_info "Watching run ID: $run_id"
     echo ""
-    print_info "Waiting for workflow to complete (polling every ${POLL_INTERVAL}s, timeout: ${MAX_WAIT_TIME}s)..."
 
-    # Now wait for the workflow to complete
-    while [ $elapsed -lt $MAX_WAIT_TIME ]; do
-        local run_info=$(gh run view $run_id --repo $REPO_OWNER/$REPO_NAME --json status,conclusion 2>/dev/null || echo "")
-
-        if [ -n "$run_info" ]; then
-            local status=$(echo "$run_info" | jq -r '.status // "unknown"')
-            local conclusion=$(echo "$run_info" | jq -r '.conclusion // "unknown"')
-
-            if [ "$status" = "completed" ]; then
-                if [ "$conclusion" = "success" ]; then
-                    echo ""
-                    print_success "GitHub Actions workflow completed successfully"
-                    return 0
-                else
-                    echo ""
-                    print_error "GitHub Actions workflow failed with conclusion: $conclusion"
-                    print_info "View details at: https://github.com/$REPO_OWNER/$REPO_NAME/actions/runs/$run_id"
-                    return 1
-                fi
-            fi
+    # Watch the run until completion (with custom timeout)
+    if timeout $MAX_WAIT_TIME gh run watch $run_id --repo $REPO_OWNER/$REPO_NAME --exit-status; then
+        echo ""
+        print_success "GitHub Actions workflow completed successfully"
+        return 0
+    else
+        local exit_code=$?
+        echo ""
+        if [ $exit_code -eq 124 ]; then
+            print_error "Timeout waiting for GitHub Actions workflow (${MAX_WAIT_TIME}s)"
+        else
+            print_error "GitHub Actions workflow failed or was interrupted"
         fi
-
-        echo -n "."
-        sleep $POLL_INTERVAL
-        elapsed=$((elapsed + POLL_INTERVAL))
-    done
-
-    echo ""
-    print_error "Timeout waiting for GitHub Actions workflow (${MAX_WAIT_TIME}s)"
-    print_info "View status at: https://github.com/$REPO_OWNER/$REPO_NAME/actions/runs/$run_id"
-    return 1
+        print_info "View status at: https://github.com/$REPO_OWNER/$REPO_NAME/actions/runs/$run_id"
+        return 1
+    fi
 }
 
 # Publish to crates.io
