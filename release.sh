@@ -209,7 +209,8 @@ publish_to_crates() {
 
     print_info "Publishing to crates.io..."
 
-    if ! cargo publish; then
+    # Use --allow-dirty to allow Cargo.lock changes from the build
+    if ! cargo publish --allow-dirty; then
         print_error "Failed to publish to crates.io"
         return 1
     fi
