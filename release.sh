@@ -298,7 +298,7 @@ main() {
 
         print_info "Committing version and lock file changes..."
         git add Cargo.toml Cargo.lock
-        git commit -m "Bump version to $new_version>"
+        git commit -m "Bump version to $new_version"
         print_success "Version and lock file commit created"
         echo ""
 

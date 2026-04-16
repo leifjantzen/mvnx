@@ -301,10 +301,10 @@ fn main() -> Result<()> {
             continue;
         }
 
-        // Collect Maven error messages
+        // Collect Maven error messages (skip duplicates)
         if line.starts_with("[ERROR]") {
             let msg = line.trim_start_matches("[ERROR]").trim().to_string();
-            if !msg.is_empty() {
+            if !msg.is_empty() && !output.maven_errors.contains(&msg) {
                 output.maven_errors.push(msg);
             }
             continue;
