@@ -134,40 +134,57 @@ create_and_push_tag() {
 wait_for_workflow() {
     local tag=$1
     local elapsed=0
+    local run_id=""
 
     print_info "Waiting for GitHub Actions workflow to complete..."
     print_info "Polling every $POLL_INTERVAL seconds (timeout: $MAX_WAIT_TIME seconds)"
 
+    # First, wait for the workflow run to be created
+    print_info "Waiting for workflow run to be triggered..."
+    local wait_for_run=0
+    while [ $wait_for_run -lt 120 ]; do
+        # Get the most recent release workflow run
+        local run_list=$(gh run list --workflow release.yml --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId,status,conclusion,headRef 2>/dev/null || echo "")
+
+        if [ -n "$run_list" ]; then
+            run_id=$(echo "$run_list" | jq -r '.[0].databaseId // empty')
+            if [ -n "$run_id" ]; then
+                print_success "Workflow run created (ID: $run_id)"
+                break
+            fi
+        fi
+
+        echo -n "."
+        sleep 5
+        wait_for_run=$((wait_for_run + 5))
+    done
+
+    if [ -z "$run_id" ]; then
+        echo ""
+        print_error "Workflow run was not created within 2 minutes"
+        return 1
+    fi
+
+    echo ""
+
+    # Now wait for the workflow to complete
     while [ $elapsed -lt $MAX_WAIT_TIME ]; do
-        # Get the latest workflow run for this tag
-        local run_data=$(gh api repos/$REPO_OWNER/$REPO_NAME/actions/runs \
-            --jq ".workflow_runs[] | select(.head_branch == null and .event == \"push\") | select(.head_commit.tag == \"$tag\") | .[0]" 2>/dev/null || echo "")
+        local run_info=$(gh run view $run_id --repo $REPO_OWNER/$REPO_NAME --json status,conclusion 2>/dev/null || echo "")
 
-        if [ -z "$run_data" ]; then
-            # Try alternative approach: get runs for the workflow and filter by tag
-            local run_data=$(gh api repos/$REPO_OWNER/$REPO_NAME/actions/workflows/release.yml/runs \
-                --jq ".workflow_runs[0]" 2>/dev/null || echo "")
-        fi
+        if [ -n "$run_info" ]; then
+            local status=$(echo "$run_info" | jq -r '.status // "unknown"')
+            local conclusion=$(echo "$run_info" | jq -r '.conclusion // "unknown"')
 
-        if [ -z "$run_data" ]; then
-            echo -n "."
-            sleep $POLL_INTERVAL
-            elapsed=$((elapsed + POLL_INTERVAL))
-            continue
-        fi
-
-        local status=$(echo "$run_data" | jq -r '.status // "unknown"')
-        local conclusion=$(echo "$run_data" | jq -r '.conclusion // "unknown"')
-
-        if [ "$status" = "completed" ]; then
-            if [ "$conclusion" = "success" ]; then
-                echo ""
-                print_success "GitHub Actions workflow completed successfully"
-                return 0
-            else
-                echo ""
-                print_error "GitHub Actions workflow failed with conclusion: $conclusion"
-                return 1
+            if [ "$status" = "completed" ]; then
+                if [ "$conclusion" = "success" ]; then
+                    echo ""
+                    print_success "GitHub Actions workflow completed successfully"
+                    return 0
+                else
+                    echo ""
+                    print_error "GitHub Actions workflow failed with conclusion: $conclusion"
+                    return 1
+                fi
             fi
         fi
 
