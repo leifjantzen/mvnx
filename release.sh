@@ -160,18 +160,34 @@ wait_for_workflow() {
 
     # First, wait for the workflow run to be created
     print_info "Waiting for workflow run to be triggered (up to ${RUN_CREATION_TIMEOUT}s)..."
+    print_info "Looking for tag: $tag"
     local wait_for_run=0
+    local attempts=0
     while [ $wait_for_run -lt $RUN_CREATION_TIMEOUT ]; do
-        # Try to get the most recent release workflow run
-        local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 5 --json databaseId,status,conclusion,headRef,createdAt 2>/dev/null || echo "")
+        attempts=$((attempts + 1))
 
-        if [ -n "$run_list" ]; then
-            # Get the most recent run that matches our tag
-            run_id=$(echo "$run_list" | jq -r ".[] | select(.headRef == \"$tag\" or .createdAt != null) | .databaseId" | head -1)
+        # Try multiple approaches to find the run
+        # Approach 1: Get runs by workflow name
+        local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,status,headRef,createdAt 2>/dev/null || echo "")
 
-            # If no exact match, just use the first run (it should be the most recent)
+        if [ -z "$run_list" ]; then
+            # Approach 2: Try with just the repo (no workflow filter)
+            run_list=$(gh run list --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,status,headRef,createdAt 2>/dev/null || echo "")
+        fi
+
+        if [ -n "$run_list" ] && [ "$run_list" != "[]" ]; then
+            # Debug: show what we got
+            if [ $((attempts % 12)) -eq 0 ]; then
+                print_info "Found runs:"
+                echo "$run_list" | jq -r '.[] | "  - ID: \(.databaseId), Status: \(.status), Head: \(.headRef)"' 2>/dev/null || true
+            fi
+
+            # Try to find a run for this tag
+            run_id=$(echo "$run_list" | jq -r ".[] | select(.headRef == \"$tag\") | .databaseId" 2>/dev/null | head -1)
+
+            # If no exact match by headRef, take the most recent run (first in list)
             if [ -z "$run_id" ]; then
-                run_id=$(echo "$run_list" | jq -r '.[0].databaseId // empty')
+                run_id=$(echo "$run_list" | jq -r '.[0].databaseId // empty' 2>/dev/null)
             fi
 
             if [ -n "$run_id" ]; then
