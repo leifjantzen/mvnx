@@ -113,7 +113,7 @@ check_clean_working_dir() {
 # Check if tag exists on origin
 tag_exists_on_origin() {
     local tag=$1
-    git ls-remote --tags origin "$tag" >/dev/null 2>&1
+    git ls-remote --tags origin | grep -E "refs/tags/$tag$" >/dev/null 2>&1
 }
 
 # Check if version is published on crates.io
@@ -271,9 +271,8 @@ main() {
 
     # Check if tag already exists on origin
     local tag="v$new_version"
-    local tag_exists=$(tag_exists_on_origin "$tag")
 
-    if [ "$tag_exists" = "0" ]; then
+    if ! tag_exists_on_origin "$tag"; then
         # Tag doesn't exist, proceed with full release
         read -p "Proceed with release v$new_version to GitHub and crates.io? (y/N) " -n 1 -r
         echo
