@@ -353,6 +353,11 @@ fn main() -> Result<()> {
     spinner_running.store(false, Ordering::Relaxed);
     let _ = spinner_thread.join();
 
+    // If Maven exited with error but we didn't see "BUILD FAILURE", mark as failure
+    if exit_status.code() != Some(0) && output.overall_status == BuildStatus::Building {
+        output.overall_status = BuildStatus::Failure;
+    }
+
     // Print summary
     print_summary(&output);
 
