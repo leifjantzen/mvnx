@@ -170,8 +170,14 @@ wait_for_workflow() {
     print_info "Waiting for workflow run to appear in GitHub API (looking for commit $commit_sha)..."
 
     while [ -z "$run_id" ] && [ $attempts -lt $max_attempts ]; do
-        # Get recent runs for the workflow and find the one matching our commit
-        local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,headSha 2>/dev/null)
+        # Get recent runs for the workflow with all relevant fields
+        local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 10 --json databaseId,headSha,name,createdAt 2>/dev/null)
+
+        # Debug: show what we're getting
+        if [ $((attempts % 4)) -eq 0 ] && [ $attempts -gt 0 ]; then
+            print_info "Available runs:"
+            echo "$run_list" | jq -r '.[] | "  - ID: \(.databaseId), SHA: \(.headSha), Name: \(.name)"' 2>/dev/null || true
+        fi
 
         # Find the run that matches our commit SHA
         if [ -n "$run_list" ] && [ "$run_list" != "[]" ]; then
