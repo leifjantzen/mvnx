@@ -38,6 +38,7 @@ struct MvnOutput {
     tests_failed: u32,
     tests_errored: u32,
     tests_skipped: u32,
+    maven_errors: Vec<String>,
 }
 
 struct TestFailure {
@@ -169,6 +170,7 @@ fn main() -> Result<()> {
         tests_failed: 0,
         tests_errored: 0,
         tests_skipped: 0,
+        maven_errors: Vec::new(),
     };
 
     let mut current_test_failure: Option<TestFailure> = None;
@@ -299,6 +301,15 @@ fn main() -> Result<()> {
             continue;
         }
 
+        // Collect Maven error messages
+        if line.starts_with("[ERROR]") {
+            let msg = line.trim_start_matches("[ERROR]").trim().to_string();
+            if !msg.is_empty() {
+                output.maven_errors.push(msg);
+            }
+            continue;
+        }
+
         // Parse overall build result
         if line.contains("BUILD SUCCESS") {
             output.overall_status = BuildStatus::Success;
@@ -363,14 +374,24 @@ fn main() -> Result<()> {
             }
         }
     } else if output.overall_status == BuildStatus::Failure {
-        // Build failed but no surefire-reports found - check if tests were skipped
-        println!("\n{}", "=".repeat(80));
-        println!("TEST FAILURE DETAILS");
-        println!("{}", "=".repeat(80));
-        println!("\nNo surefire-reports found in target directories.");
-        println!("Check the following:");
-        for module in &output.reactor_order {
-            println!("  - {}/target/surefire-reports/", module);
+        // Build failed but no surefire-reports found
+        if !output.maven_errors.is_empty() {
+            println!("\n{}", "=".repeat(80));
+            println!("BUILD ERRORS");
+            println!("{}", "=".repeat(80));
+            println!();
+            for error in &output.maven_errors {
+                println!("{}", error);
+            }
+        } else {
+            println!("\n{}", "=".repeat(80));
+            println!("TEST FAILURE DETAILS");
+            println!("{}", "=".repeat(80));
+            println!("\nNo surefire-reports found in target directories.");
+            println!("Check the following:");
+            for module in &output.reactor_order {
+                println!("  - {}/target/surefire-reports/", module);
+            }
         }
     }
 
