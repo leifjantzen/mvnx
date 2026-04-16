@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "mvnx"
-version = "1.0.6"
+version = "1.0.7"
 dependencies = [
  "anyhow",
  "regex",
