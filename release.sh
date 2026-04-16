@@ -8,7 +8,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO_OWNER="ljantzen"
+REPO_OWNER="leifjantzen"
 REPO_NAME="mvnx"
 WORKFLOW_NAME="Release"
 MAX_WAIT_TIME=900  # 15 minutes in seconds
@@ -160,11 +160,11 @@ wait_for_workflow() {
 
     # Use gh run watch to monitor the most recent run
     # First, get the ID of the most recent release workflow run
-    local run_id=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId --jq '.[0].databaseId' 2>/dev/null)
+    local run_id=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId 2>/dev/null | jq -r '.[0].databaseId // empty')
 
-    if [ -z "$run_id" ]; then
-        # Try alternative query
-        run_id=$(gh api repos/$REPO_OWNER/$REPO_NAME/actions/workflows -q '.[0].id' 2>/dev/null)
+    if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+        # Try alternative: get the most recent run without filtering by workflow
+        run_id=$(gh run list --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId 2>/dev/null | jq -r '.[0].databaseId // empty')
     fi
 
     if [ -z "$run_id" ]; then
