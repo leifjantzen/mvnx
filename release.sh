@@ -11,8 +11,9 @@ NC='\033[0m' # No Color
 REPO_OWNER="ljantzen"
 REPO_NAME="mvnx"
 WORKFLOW_NAME="Release"
-MAX_WAIT_TIME=600  # 10 minutes in seconds
+MAX_WAIT_TIME=900  # 15 minutes in seconds
 POLL_INTERVAL=10   # Poll every 10 seconds
+RUN_CREATION_TIMEOUT=180  # 3 minutes to wait for run to be created
 
 # Helper functions
 print_error() {
@@ -156,19 +157,25 @@ wait_for_workflow() {
     local run_id=""
 
     print_info "Waiting for GitHub Actions workflow to complete..."
-    print_info "Polling every $POLL_INTERVAL seconds (timeout: $MAX_WAIT_TIME seconds)"
 
     # First, wait for the workflow run to be created
-    print_info "Waiting for workflow run to be triggered..."
+    print_info "Waiting for workflow run to be triggered (up to ${RUN_CREATION_TIMEOUT}s)..."
     local wait_for_run=0
-    while [ $wait_for_run -lt 120 ]; do
-        # Get the most recent release workflow run
-        local run_list=$(gh run list --workflow release.yml --repo $REPO_OWNER/$REPO_NAME --limit 1 --json databaseId,status,conclusion,headRef 2>/dev/null || echo "")
+    while [ $wait_for_run -lt $RUN_CREATION_TIMEOUT ]; do
+        # Try to get the most recent release workflow run
+        local run_list=$(gh run list --workflow "$WORKFLOW_NAME" --repo $REPO_OWNER/$REPO_NAME --limit 5 --json databaseId,status,conclusion,headRef,createdAt 2>/dev/null || echo "")
 
         if [ -n "$run_list" ]; then
-            run_id=$(echo "$run_list" | jq -r '.[0].databaseId // empty')
+            # Get the most recent run that matches our tag
+            run_id=$(echo "$run_list" | jq -r ".[] | select(.headRef == \"$tag\" or .createdAt != null) | .databaseId" | head -1)
+
+            # If no exact match, just use the first run (it should be the most recent)
+            if [ -z "$run_id" ]; then
+                run_id=$(echo "$run_list" | jq -r '.[0].databaseId // empty')
+            fi
+
             if [ -n "$run_id" ]; then
-                print_success "Workflow run created (ID: $run_id)"
+                print_success "Workflow run detected (ID: $run_id)"
                 break
             fi
         fi
@@ -180,11 +187,13 @@ wait_for_workflow() {
 
     if [ -z "$run_id" ]; then
         echo ""
-        print_error "Workflow run was not created within 2 minutes"
+        print_error "Workflow run was not detected within ${RUN_CREATION_TIMEOUT}s"
+        print_info "You can check the workflow status at: https://github.com/$REPO_OWNER/$REPO_NAME/actions"
         return 1
     fi
 
     echo ""
+    print_info "Waiting for workflow to complete (polling every ${POLL_INTERVAL}s, timeout: ${MAX_WAIT_TIME}s)..."
 
     # Now wait for the workflow to complete
     while [ $elapsed -lt $MAX_WAIT_TIME ]; do
@@ -202,6 +211,7 @@ wait_for_workflow() {
                 else
                     echo ""
                     print_error "GitHub Actions workflow failed with conclusion: $conclusion"
+                    print_info "View details at: https://github.com/$REPO_OWNER/$REPO_NAME/actions/runs/$run_id"
                     return 1
                 fi
             fi
@@ -214,6 +224,7 @@ wait_for_workflow() {
 
     echo ""
     print_error "Timeout waiting for GitHub Actions workflow (${MAX_WAIT_TIME}s)"
+    print_info "View status at: https://github.com/$REPO_OWNER/$REPO_NAME/actions/runs/$run_id"
     return 1
 }
 
