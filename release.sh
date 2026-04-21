@@ -337,6 +337,11 @@ main() {
         print_success "Version and lock file commit created"
         echo ""
 
+        print_info "Pushing commits to remote..."
+        git push origin HEAD
+        print_success "Commits pushed to remote"
+        echo ""
+
         # Step 1: Create and push tag
         create_and_push_tag "$new_version"
         echo ""
