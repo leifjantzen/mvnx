@@ -129,17 +129,45 @@ fn main() -> Result<()> {
     }
 
     // Spawn Maven process
-    let mut child = Command::new(mvn_cmd)
+    let mut child = match Command::new(mvn_cmd)
         .args(&mvn_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .spawn()?;
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) if use_mvnd => {
+            eprintln!("Warning: mvnd failed to start ({}), falling back to mvn", e);
+            Command::new("mvn")
+                .args(&mvn_args)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()?
+        }
+        Err(e) => Err(e)?,
+    };
 
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| anyhow::anyhow!("Failed to capture stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| anyhow::anyhow!("Failed to capture stderr"))?;
     let reader = BufReader::new(stdout);
+    let stderr_reader = BufReader::new(stderr);
+
+    // Collect stderr in a thread
+    let stderr_collected = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let stderr_collected_clone = stderr_collected.clone();
+    let stderr_thread = thread::spawn(move || {
+        for line in stderr_reader.lines().map_while(Result::ok) {
+            if let Ok(mut lines) = stderr_collected_clone.lock() {
+                lines.push(line);
+            }
+        }
+    });
 
     // Start spinner animation
     let spinner_running = Arc::new(AtomicBool::new(true));
@@ -385,6 +413,13 @@ fn main() -> Result<()> {
     spinner_running.store(false, Ordering::Relaxed);
     let _ = spinner_thread.join();
 
+    // Wait for stderr collection to complete and get the lines
+    let _ = stderr_thread.join();
+    let stderr_lines = stderr_collected
+        .lock()
+        .map(|lines| lines.clone())
+        .unwrap_or_default();
+
     // Close log file to ensure all data is flushed
     drop(log_file);
 
@@ -422,6 +457,31 @@ fn main() -> Result<()> {
             println!();
             for error in &output.maven_errors {
                 println!("{}", error);
+            }
+        } else if output.reactor_order.is_empty() {
+            // If no reactor order, it's likely a startup error (mvn/mvnd crashed)
+            println!("\n{}", "=".repeat(80));
+            println!("BUILD STARTUP ERROR");
+            println!("{}", "=".repeat(80));
+            println!();
+
+            // Show stderr if available
+            if !stderr_lines.is_empty() {
+                for line in &stderr_lines {
+                    println!("{}", line);
+                }
+            }
+
+            // Also show log file if it was written and contains useful info
+            if let Some(ref log_path) = log_file_path {
+                if let Ok(content) = fs::read_to_string(log_path) {
+                    if !content.is_empty() && !stderr_lines.iter().any(|l| content.contains(l)) {
+                        println!("\nLog file output ({}):", log_path);
+                        for line in content.lines() {
+                            println!("{}", line);
+                        }
+                    }
+                }
             }
         } else {
             println!("\n{}", "=".repeat(80));
