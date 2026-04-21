@@ -5,7 +5,7 @@ use mvnx::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -71,6 +71,21 @@ fn main() -> Result<()> {
         let output = Command::new("mvn").arg("--help").output()?;
         println!("{}", String::from_utf8_lossy(&output.stdout));
         std::process::exit(0);
+    }
+
+    // Check for -l/--log-file flag
+    let mut log_file_path: Option<String> = None;
+    let log_file_index = mvn_args
+        .iter()
+        .position(|arg| arg == "-l" || arg == "--log-file");
+
+    if let Some(pos) = log_file_index {
+        // Get the next argument as the file path
+        if pos + 1 < mvn_args.len() {
+            log_file_path = Some(mvn_args[pos + 1].clone());
+            mvn_args.remove(pos + 1);
+        }
+        mvn_args.remove(pos);
     }
 
     // Check for -j flag (dad jokes) and -ji flag (joke interval)
@@ -181,9 +196,21 @@ fn main() -> Result<()> {
     let original_reactor_order = output.reactor_order.clone();
     let build_start = Instant::now();
 
+    // Open log file if specified
+    let mut log_file = if let Some(ref path) = log_file_path {
+        Some(File::create(path)?)
+    } else {
+        None
+    };
+
     // Parse Maven output
     for line in reader.lines() {
         let line = line?;
+
+        // Write to log file if specified
+        if let Some(ref mut file) = log_file {
+            writeln!(file, "{}", line)?;
+        }
 
         // Parse reactor build order
         if line.contains("The Reactor build order:") {
@@ -352,6 +379,9 @@ fn main() -> Result<()> {
     // Stop the spinner
     spinner_running.store(false, Ordering::Relaxed);
     let _ = spinner_thread.join();
+
+    // Close log file to ensure all data is flushed
+    drop(log_file);
 
     // If Maven exited with error but we didn't see "BUILD FAILURE", mark as failure
     if exit_status.code() != Some(0) && output.overall_status == BuildStatus::Building {
@@ -570,11 +600,12 @@ fn print_help() {
     println!("    mvnx [OPTIONS] [MAVEN_ARGS]...");
     println!();
     println!("OPTIONS:");
-    println!("    -h, --help          Show this help message");
-    println!("    --mvnhelp           Show Maven help (mvn --help)");
-    println!("    --clip              Copy test stacktrace to clipboard on single failure");
-    println!("    -j                  Show dad jokes every 30 seconds during build");
-    println!("    -ji <seconds>       Show dad jokes at custom interval (implies -j)");
+    println!("    -h, --help              Show this help message");
+    println!("    --mvnhelp               Show Maven help (mvn --help)");
+    println!("    -l, --log-file <file>   Write all Maven output to file");
+    println!("    --clip                  Copy test stacktrace to clipboard on single failure");
+    println!("    -j                      Show dad jokes every 30 seconds during build");
+    println!("    -ji <seconds>           Show dad jokes at custom interval (implies -j)");
     println!();
     println!("MAVEN_ARGS:");
     println!("    Any arguments that would normally be passed to Maven");
@@ -582,6 +613,7 @@ fn print_help() {
     println!("EXAMPLES:");
     println!("    mvnx clean install");
     println!("    mvnx --clip test");
+    println!("    mvnx -l build.log clean package");
     println!("    mvnx -j clean package");
     println!("    mvnx -ji 10 test");
     println!("    mvnx --mvnhelp");

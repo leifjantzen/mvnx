@@ -38,6 +38,7 @@ mvnx -s ~/settings.xml clean package
 
 - `-h, --help`: Show help message
 - `--mvnhelp`: Show Maven's help message (mvn --help)
+- `-l, --log-file <file>`: Write all Maven output to the specified file
 - `--clip`: Copy stacktrace to clipboard when exactly one test fails
 - `-j`: Show dad jokes every 30 seconds during the build
 - `-ji <seconds>`: Show dad jokes with custom interval (implies `-j`)
@@ -47,6 +48,7 @@ Examples:
 ```bash
 mvnx clean install
 mvnx --clip test
+mvnx -l build.log clean install
 mvnx -j clean install
 mvnx -ji 20 test
 mvnx --clip -j package
@@ -104,16 +106,40 @@ The tests cover:
 
 ## Installation
 
-### Build from source
+### From crates.io (recommended)
 
 ```bash
-cargo build --release
-# Binary at ./target/release/mvnx
+cargo install mvnx
 ```
 
-### Add to PATH
+This installs the latest release directly to your Cargo bin directory (typically `~/.cargo/bin`).
 
-Copy the binary to a location in PATH:
+### Pre-built releases
+
+Download pre-built binaries from the [GitHub releases page](https://github.com/leifjantzen/mvnx/releases) and add to your PATH:
+
+```bash
+# Download, extract, and install
+wget https://github.com/leifjantzen/mvnx/releases/download/v1.1.0/mvnx-x86_64-unknown-linux-gnu
+chmod +x mvnx-x86_64-unknown-linux-gnu
+mv mvnx-x86_64-unknown-linux-gnu ~/.local/bin/mvnx
+```
+
+### Build from source
+
+Clone the repository and build:
+
+```bash
+git clone https://github.com/leifjantzen/mvnx.git
+cd mvnx
+cargo build --release
+```
+
+The binary will be at `./target/release/mvnx`.
+
+### Add custom build to PATH
+
+If you built from source or want to use a custom location:
 
 ```bash
 cp target/release/mvnx ~/.local/bin/
@@ -121,7 +147,8 @@ cp target/release/mvnx ~/.local/bin/
 sudo cp target/release/mvnx /usr/local/bin/
 ```
 
-Use it then as:
+Then use it:
+
 ```bash
 mvnx clean install
 ```

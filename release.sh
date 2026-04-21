@@ -125,6 +125,32 @@ is_published_on_crates() {
         jq -e ".versions[] | select(.num == \"$version\")" >/dev/null 2>&1
 }
 
+# Validate tag points to expected commit on current branch
+validate_tag() {
+    local tag=$1
+    local expected_branch=${2:-main}
+
+    # Get the commit the tag points to
+    local tag_commit=$(git rev-parse "$tag^{commit}" 2>/dev/null || git rev-list -n 1 "$tag")
+    local current_head=$(git rev-parse HEAD)
+
+    # Check if tag points to current HEAD
+    if [ "$tag_commit" != "$current_head" ]; then
+        print_error "Tag $tag points to commit $tag_commit, but current HEAD is $current_head"
+        print_info "This likely means the tag was created on the wrong commit"
+        return 1
+    fi
+
+    # Check if tag commit is on the current branch
+    if ! git merge-base --is-ancestor "$tag_commit" "$expected_branch"; then
+        print_error "Tag $tag does not point to a commit on branch $expected_branch"
+        return 1
+    fi
+
+    print_success "Tag $tag validated (points to $tag_commit on $expected_branch)"
+    return 0
+}
+
 # Create and push version tag
 create_and_push_tag() {
     local version=$1
@@ -148,6 +174,15 @@ create_and_push_tag() {
     print_info "Pushing tag to remote..."
     git push origin "$tag"
     print_success "Tag pushed to remote"
+
+    # Validate tag was created on the correct commit
+    print_info "Validating tag..."
+    if ! validate_tag "$tag" "main"; then
+        print_error "Tag validation failed - the tag may be on the wrong commit!"
+        print_info "Deleting local tag $tag to prevent pushing incorrect tag"
+        git tag -d "$tag"
+        exit 1
+    fi
 }
 
 # Wait for GitHub Actions workflow to complete
