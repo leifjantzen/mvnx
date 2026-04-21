@@ -66,9 +66,14 @@ fn main() -> Result<()> {
         std::process::exit(0);
     }
 
+    // Check for --mvnd flag (use Maven Daemon instead of mvn)
+    let use_mvnd = mvn_args.iter().any(|arg| arg == "--mvnd");
+    mvn_args.retain(|arg| arg != "--mvnd");
+    let mvn_cmd = if use_mvnd { "mvnd" } else { "mvn" };
+
     // Check for mvnhelp flag (show Maven help)
     if mvn_args.iter().any(|arg| arg == "--mvnhelp") {
-        let output = Command::new("mvn").arg("--help").output()?;
+        let output = Command::new(mvn_cmd).arg("--help").output()?;
         println!("{}", String::from_utf8_lossy(&output.stdout));
         std::process::exit(0);
     }
@@ -124,7 +129,7 @@ fn main() -> Result<()> {
     }
 
     // Spawn Maven process
-    let mut child = Command::new("mvn")
+    let mut child = Command::new(mvn_cmd)
         .args(&mvn_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -602,6 +607,7 @@ fn print_help() {
     println!("OPTIONS:");
     println!("    -h, --help              Show this help message");
     println!("    --mvnhelp               Show Maven help (mvn --help)");
+    println!("    --mvnd                  Use Maven Daemon (mvnd) instead of mvn");
     println!("    -l, --log-file <file>   Write all Maven output to file");
     println!("    --clip                  Copy test stacktrace to clipboard on single failure");
     println!("    -j                      Show dad jokes every 30 seconds during build");
@@ -612,6 +618,7 @@ fn print_help() {
     println!();
     println!("EXAMPLES:");
     println!("    mvnx clean install");
+    println!("    mvnx --mvnd clean install");
     println!("    mvnx --clip test");
     println!("    mvnx -l build.log clean package");
     println!("    mvnx -j clean package");
