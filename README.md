@@ -38,6 +38,7 @@ mvnx -s ~/settings.xml clean package
 
 - `-h, --help`: Show help message
 - `--mvnhelp`: Show Maven's help message (mvn --help)
+- `--mvnd`: Use Maven Daemon (mvnd) instead of mvn
 - `-l, --log-file <file>`: Write all Maven output to the specified file
 - `--clip`: Copy stacktrace to clipboard when exactly one test fails
 - `-j`: Show dad jokes every 30 seconds during the build
@@ -47,6 +48,7 @@ Examples:
 
 ```bash
 mvnx clean install
+mvnx --mvnd clean install
 mvnx --clip test
 mvnx -l build.log clean install
 mvnx -j clean install
