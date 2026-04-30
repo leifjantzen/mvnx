@@ -83,12 +83,14 @@ update_version() {
 # Show usage
 show_usage() {
     cat << EOF
-Usage: ./release.sh <version>
+Usage: ./release.sh [version]
 
 Arguments:
   <version>    New version to release (semantic versioning: X.Y.Z)
+               If omitted, automatically increments the patch version
 
-Example:
+Examples:
+  ./release.sh              # Auto-increments patch version
   ./release.sh 1.0.0
   ./release.sh 1.1.0
 
@@ -121,7 +123,7 @@ tag_exists_on_origin() {
 is_published_on_crates() {
     local version=$1
     # Query crates.io API to check if the version exists
-    curl -s "https://crates.io/api/v1/crates/mvnx/versions" | \
+    curl -s "https://crates.io/api/v1/crates/$REPO_NAME/versions" | \
         jq -e ".versions[] | select(.num == \"$version\")" >/dev/null 2>&1
 }
 
@@ -276,23 +278,33 @@ publish_to_crates() {
     print_success "Published to crates.io"
 }
 
+# Increment patch version
+increment_patch_version() {
+    local version=$1
+    local major=$(echo $version | cut -d. -f1)
+    local minor=$(echo $version | cut -d. -f2)
+    local patch=$(echo $version | cut -d. -f3)
+    echo "$major.$minor.$((patch + 1))"
+}
+
 # Main function
 main() {
     # Parse arguments
     if [ $# -eq 0 ]; then
-        show_usage
-        exit 1
-    fi
+        # No arguments: automatically increment patch version
+        local current_version=$(get_version)
+        local new_version=$(increment_patch_version "$current_version")
+    else
+        local new_version=$1
 
-    local new_version=$1
-
-    if [ "$new_version" = "-h" ] || [ "$new_version" = "--help" ]; then
-        show_usage
-        exit 0
+        if [ "$new_version" = "-h" ] || [ "$new_version" = "--help" ]; then
+            show_usage
+            exit 0
+        fi
     fi
 
     echo "=========================================="
-    echo "        Release Script for mvnx"
+    echo "        Release Script for $REPO_NAME"
     echo "=========================================="
     echo ""
 
@@ -365,7 +377,7 @@ main() {
         print_success "Release v$new_version completed successfully!"
         echo "=========================================="
         echo "GitHub Release: https://github.com/$REPO_OWNER/$REPO_NAME/releases/tag/v$new_version"
-        echo "crates.io: https://crates.io/crates/mvnx/v$new_version"
+        echo "crates.io: https://crates.io/crates/$REPO_NAME/v$new_version"
     else
         print_error "Release partially complete - tag pushed but crates.io publication failed"
         exit 1
